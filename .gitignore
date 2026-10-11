@@ -1,0 +1,29 @@
+# Local environments and credentials
+.venv/
+venv/
+.env
+.env.*
+.aws/
+
+# Python build and cache files
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Controlled datasets and generated results
+data/*
+!data/README.md
+!data/final_gold_dataset_v2.csv
+!data/final_gold_dataset_v2_manifest.json
+outputs/
+models/
+
+# Editors and temporary Office files
+.idea/
+.vscode/
+~$*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,56 @@
+﻿{
+    "dataset":  "Bluesky scholarly discourse gold dataset v2",
+    "generated_at_utc":  "2026-10-10T12:07:03.8058802Z",
+    "rows":  500,
+    "unique_annotation_ids":  500,
+    "majority_resolved_rows":  442,
+    "human_adjudicated_rows":  58,
+    "final_label_distribution":  {
+                                     "Acknowledgment":  45,
+                                     "Announcement":  119,
+                                     "Contextualization":  29,
+                                     "Critique":  50,
+                                     "Evaluation":  56,
+                                     "Explanation":  154,
+                                     "Other":  47
+                                 },
+    "allowed_labels":  [
+                           "Acknowledgment",
+                           "Announcement",
+                           "Contextualization",
+                           "Critique",
+                           "Evaluation",
+                           "Explanation",
+                           "Other"
+                       ],
+    "decision_rule":  "Use the three-human majority label when at least two agree; otherwise use the final human_decision recorded after LLM-assisted review.",
+    "methodology":  "ANNOTATION_METHODOLOGY.md",
+    "inputs":  {
+                   "base_dataset":  {
+                                        "path":  "output/gold_annotation/full_20240201_20260423_gold_annotation.csv",
+                                        "sha256":  "EA79E9C7027B6D2C8393917BD96761391B563A11A2620E346D29BCF3A17801B4"
+                                    },
+                   "comparison":  {
+                                      "path":  "output/gold_annotation/three_annotator_comparison_v2/adjudicated_annotations.csv",
+                                      "sha256":  "A79E6B6D18825F45BBF6DAE6C26E5F5440F2B6E6A3E673E1F8433AD16FDA72E8"
+                                  },
+                   "human_review":  {
+                                        "path":  "output/gold_annotation/llm_adjudication_v1/human_review.xlsx",
+                                        "sha256":  "5ACC893A04323CCF3CDA2714EFE1C02FB81E92868B282FBE43BF6E44837C570D"
+                                    },
+                   "handbook":  {
+                                    "path":  "annotation_handbook_v2.docx",
+                                    "sha256":  "CF5B85BEA01A33B8E1FDD59CAF5283566B3DD9CC9084C3A785158F8692659C0E"
+                                }
+               },
+    "outputs":  {
+                    "csv":  {
+                                "path":  "output/gold_annotation/final_gold_dataset_v2/final_gold_dataset_v2.csv",
+                                "sha256":  "2F6E04A7C6C509D04C6A7784AA3E99D39DC00113F1A6301FF9568C29B8D4FEFF"
+                            },
+                    "xlsx":  {
+                                 "path":  "output/gold_annotation/final_gold_dataset_v2/final_gold_dataset_v2.xlsx",
+                                 "sha256":  "9B5A6845CC2ABA458C04F2A239F67D3C9ADD98E207A10BD7C1D67C028EA839DE"
+                             }
+                }
+}
