@@ -6,7 +6,10 @@ import unittest
 from pathlib import Path
 
 from bluesky_discourse.validate_data import validate
-from bluesky_discourse.prepare_data import connected_groups, prepare
+from bluesky_discourse.prepare_data import assign_folds, connected_groups, model_text, prepare
+from bluesky_discourse.baseline import evaluate
+from bluesky_discourse.train_tfidf import build_pipeline, evaluate_text
+from bluesky_discourse.validate_data import LABELS
 
 
 class ValidationTests(unittest.TestCase):
@@ -83,6 +86,118 @@ class ValidationTests(unittest.TestCase):
         groups = connected_groups(rows)
         self.assertEqual(len(set(groups.values())), 1)
         self.assertEqual(groups, connected_groups(list(reversed(rows))))
+
+    def test_reply_text_preserves_content_and_excludes_label_metadata(self):
+        row = {
+            "item_type": "reply",
+            "annotation_text": "  Not\ntrue!\t#science @someone https://example.org \U0001f600 ",
+            "context_text": " A  published\nresult. ",
+            "final_label": "SECRET_LABEL", "llm_rationale": "SECRET_RATIONALE",
+        }
+        result = model_text(row)
+        self.assertEqual(result["text_only"],
+                         "[REPLY] Not true! #science @someone https://example.org \U0001f600")
+        self.assertEqual(result["text_with_context"],
+                         result["text_only"] + " [CONTEXT] A published result.")
+        self.assertNotIn("SECRET", " ".join(result.values()))
+
+    def test_original_ignores_context_and_missing_reply_context_is_safe(self):
+        original = model_text({"item_type": "original_post", "annotation_text": "New paper", "context_text": "Unused"})
+        self.assertEqual(original, {"text_only": "[ORIGINAL] New paper", "text_with_context": "[ORIGINAL] New paper"})
+        reply = model_text({"item_type": "reply", "annotation_text": "Thanks", "context_text": " \n "})
+        self.assertEqual(reply["text_only"], reply["text_with_context"])
+        self.assertNotIn("[CONTEXT]", reply["text_with_context"])
+
+    def test_folds_cover_items_keep_groups_and_repeat_with_fixed_seed(self):
+        rows = [{"annotation_id": f"id_{index:03d}", "uri": f"uri:{index}",
+                 "group_id": f"group:{index // 2}", "final_label": "A" if index % 2 else "B"}
+                for index in range(60)]
+        first = [dict(row) for row in rows]
+        second = [dict(row) for row in reversed(rows)]
+        report = assign_folds(first)
+        second_report = assign_folds(second)
+        self.assertEqual({row["fold"] for row in first}, set(range(5)))
+        for group in {row["group_id"] for row in first}:
+            self.assertEqual(len({row["fold"] for row in first if row["group_id"] == group}), 1)
+        self.assertEqual({row["annotation_id"]: row["fold"] for row in first},
+                         {row["annotation_id"]: row["fold"] for row in second})
+        self.assertEqual(report["assignment_sha256"], second_report["assignment_sha256"])
+
+    def test_fold_assignment_rejects_repeated_post_uri(self):
+        rows = [{"annotation_id": "a", "uri": "same", "group_id": "g", "final_label": "A"},
+                {"annotation_id": "b", "uri": "same", "group_id": "h", "final_label": "A"}]
+        with self.assertRaisesRegex(ValueError, "unique post URIs"):
+            assign_folds(rows)
+
+
+class BaselineTests(unittest.TestCase):
+    def fixture(self):
+        # The global majority is Critique, but fold 0's training majority is Explanation.
+        return [{"annotation_id": f"id_{index:02d}", "uri": f"uri:{index}",
+                 "group_id": f"group:{index}", "fold": 0 if index < 10 else index - 9,
+                 "final_label": "Critique" if index < 10 else "Explanation"}
+                for index in range(14)]
+
+    def test_majority_uses_training_labels_and_predicts_each_item_once(self):
+        predictions, report = evaluate(self.fixture())
+        self.assertEqual(len(predictions), 14)
+        self.assertEqual(len({row["annotation_id"] for row in predictions}), 14)
+        self.assertEqual({row["predicted_label"] for row in predictions if row["fold"] == 0}, {"Explanation"})
+        self.assertEqual(report["overall_out_of_fold"]["accuracy"], 0.0)
+        self.assertEqual(sum(map(sum, report["confusion_matrix"])), 14)
+
+    def test_baseline_rejects_connected_group_crossing_folds(self):
+        rows = self.fixture()
+        rows[-1]["group_id"] = rows[0]["group_id"]
+        with self.assertRaisesRegex(ValueError, "multiple folds"):
+            evaluate(rows)
+
+    def test_changing_text_or_metadata_cannot_change_baseline_predictions(self):
+        rows = self.fixture()
+        before = evaluate(rows)[0]
+        for row in rows:
+            row.update(annotation_text="Arbitrary changed text", llm_suggested_label="Other")
+        self.assertEqual(before, evaluate(rows)[0])
+
+
+class TextClassifierTests(unittest.TestCase):
+    def fixture(self):
+        return [{"annotation_id": f"id_{fold}_{index}", "uri": f"uri:{fold}:{index}",
+                 "group_id": f"group:{fold}:{index}", "fold": fold, "final_label": label,
+                 "text_only": f"[REPLY] example {label}",
+                 "text_with_context": f"[REPLY] example {label} [CONTEXT] paper"}
+                for fold in range(5) for index, label in enumerate(sorted(LABELS))]
+
+    def test_test_only_words_do_not_enter_vocabulary_or_change_idf(self):
+        model = build_pipeline()
+        model.fit(["methodological flaws", "detailed explanation"], ["Critique", "Explanation"])
+        vectorizer = model.named_steps["tfidf"]
+        vocabulary = dict(vectorizer.vocabulary_)
+        idf = vectorizer.idf_.copy()
+        model.predict(["unseenwordonlytest"])
+        self.assertNotIn("unseenwordonlytest", vectorizer.vocabulary_)
+        self.assertEqual(vocabulary, vectorizer.vocabulary_)
+        self.assertTrue((idf == vectorizer.idf_).all())
+
+    def test_text_evaluation_covers_items_and_ignores_label_metadata(self):
+        rows = self.fixture()
+        first, report = evaluate_text(rows, "text_only")
+        self.assertEqual(len(first), 35)
+        self.assertEqual(len({row["annotation_id"] for row in first}), 35)
+        self.assertEqual(set(report["predicted_label_counts"]), LABELS)
+        for row in rows:
+            row.update(llm_suggested_label="Other", ramin_label="Other")
+        self.assertEqual(first, evaluate_text(rows, "text_only")[0])
+
+    def test_label_column_is_rejected_as_model_input(self):
+        with self.assertRaisesRegex(ValueError, "not label/metadata"):
+            evaluate_text(self.fixture(), "final_label")
+
+    def test_text_evaluation_rejects_group_overlap(self):
+        rows = self.fixture()
+        rows[-1]["group_id"] = rows[0]["group_id"]
+        with self.assertRaisesRegex(ValueError, "multiple folds"):
+            evaluate_text(rows, "text_with_context")
 
 
 if __name__ == "__main__":
