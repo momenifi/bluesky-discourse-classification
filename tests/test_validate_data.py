@@ -12,6 +12,7 @@ from bluesky_discourse.baseline import evaluate
 from bluesky_discourse.train_tfidf import build_pipeline, evaluate_text
 from bluesky_discourse.validate_data import LABELS
 from bluesky_discourse.train_transformer import EncodedPosts, class_weights, make_weighted_loss, split_rows
+from bluesky_discourse.train_transformer import MODEL_ID, MODEL_REVISION, summarize_runs
 
 
 class ValidationTests(unittest.TestCase):
@@ -272,6 +273,103 @@ class TransformerTests(unittest.TestCase):
         before = model.classifier.weight.detach().clone()
         optimizer.step()
         self.assertFalse(torch.equal(before, model.classifier.weight))
+
+
+class TransformerSummaryTests(unittest.TestCase):
+    def fixture(self, folder):
+        rows = TextClassifierTests().fixture()
+        csv_path = folder / "training.csv"
+        with csv_path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=list(rows[0]), delimiter=";")
+            writer.writeheader()
+            writer.writerows(rows)
+        preparation = {"training_rows": len(rows),
+                       "training_csv_sha256": hashlib.sha256(csv_path.read_bytes()).hexdigest(),
+                       "folds": {"assignment_sha256": "synthetic-assignments"}}
+        preparation_path = folder / "preparation.json"
+        preparation_path.write_text(json.dumps(preparation), encoding="utf-8")
+        for fold in range(5):
+            run_folder = folder / f"distilbert_fold{fold}_text_only"
+            run_folder.mkdir()
+            test = [row for row in rows if row["fold"] == fold]
+            predictions = [{"annotation_id": row["annotation_id"], "group_id": row["group_id"],
+                            "fold": fold, "variant": "text_only", "actual_label": row["final_label"],
+                            "predicted_label": row["final_label"], "correct": True} for row in test]
+            predictions_path = run_folder / "predictions.csv"
+            with predictions_path.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(predictions[0]), delimiter=";")
+                writer.writeheader()
+                writer.writerows(predictions)
+            report = {
+                "training_csv_sha256": preparation["training_csv_sha256"],
+                "preparation_report_sha256": hashlib.sha256(preparation_path.read_bytes()).hexdigest(),
+                "fold_assignment_sha256": "synthetic-assignments", "fold": fold,
+                "text_column": "text_only", "status": "completed", "train_rows": 28, "test_rows": 7,
+                "model_id": MODEL_ID, "model_revision": MODEL_REVISION,
+                "checks": {"no_group_overlap": True, "test_not_used_for_training_or_selection": True,
+                           "each_test_item_predicted_once": True},
+                "training_arguments": {"learning_rate": 2e-5, "output_dir": str(run_folder)},
+                "tokenization": {"max_length": 256, "truncation": True, "padding": "dynamic per batch"},
+                "attention_implementation": "eager", "loss": "synthetic weighted loss",
+                "versions": {"test": "synthetic"}, "source_sha256": {"test": "synthetic"},
+                "training_seconds": 1.0,
+                "predictions_sha256": hashlib.sha256(predictions_path.read_bytes()).hexdigest(),
+            }
+            (run_folder / "report.json").write_text(json.dumps(report), encoding="utf-8")
+        return csv_path, preparation_path, folder, "text_only"
+
+    def test_summary_combines_exactly_one_prediction_per_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            predictions, report = summarize_runs(*self.fixture(Path(tmp)))
+            self.assertEqual(len(predictions), 35)
+            self.assertEqual(report["overall_out_of_fold"]["accuracy"], 1.0)
+            self.assertEqual(report["overall_out_of_fold"]["macro_f1"], 1.0)
+            self.assertEqual(report["total_training_seconds"], 5.0)
+
+    def test_summary_requires_all_five_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.fixture(Path(tmp))
+            (Path(tmp) / "distilbert_fold4_text_only/report.json").unlink()
+            with self.assertRaises(OSError):
+                summarize_runs(*args)
+
+    def test_summary_rejects_modified_predictions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.fixture(Path(tmp))
+            path = Path(tmp) / "distilbert_fold4_text_only/predictions.csv"
+            with path.open("ab") as stream:
+                stream.write(b"\n")
+            with self.assertRaisesRegex(ValueError, "saved hash"):
+                summarize_runs(*args)
+
+    def test_summary_rejects_mixed_training_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.fixture(Path(tmp))
+            path = Path(tmp) / "distilbert_fold4_text_only/report.json"
+            report = json.loads(path.read_text(encoding="utf-8"))
+            report["training_arguments"]["learning_rate"] = 1e-3
+            path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "settings, versions, or source hashes differ"):
+                summarize_runs(*args)
+
+    def test_summary_rejects_missing_and_repeated_test_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.fixture(Path(tmp))
+            folder = Path(tmp) / "distilbert_fold4_text_only"
+            path = folder / "predictions.csv"
+            with path.open(encoding="utf-8", newline="") as stream:
+                predictions = list(csv.DictReader(stream, delimiter=";"))
+            predictions[-1] = dict(predictions[0])
+            with path.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(predictions[0]), delimiter=";")
+                writer.writeheader()
+                writer.writerows(predictions)
+            report_path = folder / "report.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["predictions_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "missing, repeated, or unexpected"):
+                summarize_runs(*args)
 
 
 if __name__ == "__main__":

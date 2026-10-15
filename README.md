@@ -550,5 +550,70 @@ commands. Locally, 23 tests passed, including split separation, training-only
 class weighting, feature-field restrictions, and weighted loss backpropagation.
 A tiny randomly initialized DistilBERT also completed a CPU forward/backward
 and optimizer-step test without downloads. Local testing used PyTorch 2.9.1+cpu
-and Transformers 4.57.3; the full Trainer/CUDA run with the pinned GESIS versions
-has not yet been executed and must be verified on the server.
+and Transformers 4.57.3. The full Trainer/CUDA run was subsequently executed
+by the researcher on GESIS, with reported results recorded below.
+
+## Combine the five transformer folds
+
+The researcher reported successful GESIS runs with the fixed text-only settings:
+
+| Fold | Training seconds | Held-out accuracy | Held-out macro F1 | Held-out weighted F1 |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 118.3 | 0.550000 | 0.379972 | 0.491520 |
+| 4 | 96.2 | 0.626263 | 0.501404 | 0.597386 |
+
+These are individual fold results, not the overall five-fold estimate. The
+remaining-fold loop ran on GESIS; aggregation verifies the presence and
+consistency of all five saved runs rather than assuming completion from a log.
+
+The existing `train_transformer.py` now supports CPU-only aggregation. On
+Windows, commit and push its update together with the README and tests:
+
+```powershell
+git add README.md src/bluesky_discourse/train_transformer.py tests/test_validate_data.py
+git commit -m "Add checked five-fold transformer summary"
+git push
+```
+
+Then on GESIS, in the active project environment:
+
+```bash
+git pull --ff-only
+python -m unittest discover -s tests -v
+python -m bluesky_discourse.train_transformer --summarize --text-column text_only
+```
+
+No model is loaded and no GPU or retraining is required. Inputs are
+`outputs/training_data.csv`, its preparation report, and `report.json` plus
+`predictions.csv` in each `outputs/distilbert_fold{k}_text_only/` directory,
+for k from 0 through 4. `--runs-dir` can point to a different parent directory.
+
+Aggregation checks the prepared input and fold hashes, prediction-file hashes,
+completed statuses, matching checkpoint revision, compatible training settings,
+identical package versions and recorded training-source hashes, and one test
+prediction per prepared item. Actual labels, groups, variants, and fold IDs
+must match the prepared CSV. No group may cross folds. Per-fold output paths,
+log directories, and run names are allowed to differ; training settings are not.
+This summary code can differ from the original training code: it records its
+own hash and preserves the original training-source hashes in the report.
+
+Only two summary files are added in `outputs/distilbert_text_only_summary/`:
+
+- `predictions.csv`: all 499 held-out predictions, sorted by annotation ID.
+- `report.json`: combined accuracy/macro F1/weighted F1, fold means and population
+  standard deviations, per-category metrics, predicted-label counts, confusion
+  matrix, summed training time, and input/run/report hashes and common settings.
+
+The original five run directories remain unchanged. A nonempty summary
+directory is rejected; use a new `--outdir` for an intentional repeat. The
+summary prints overall metrics and per-category precision, recall, and F1.
+Compare its `overall_out_of_fold` scores against the same field in the majority
+and TF-IDF reports. Combined F1 is recomputed from all held-out predictions;
+it is not obtained by averaging the five fold F1 values.
+
+Locally, all 28 tests passed. Synthetic summary tests cover full prediction
+coverage, missing runs, altered predictions, mixed settings, and duplicated
+test IDs. Actual GESIS result files are not available in the local checkout,
+so no combined transformer scores have been computed locally or inferred from
+the displayed fold 0 and fold 4 results. Run aggregation on GESIS and retain its
+two outputs with the environment and committed code revision.
