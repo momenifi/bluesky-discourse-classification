@@ -3,6 +3,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+import importlib.util
 from pathlib import Path
 
 from bluesky_discourse.validate_data import validate
@@ -10,6 +11,7 @@ from bluesky_discourse.prepare_data import assign_folds, connected_groups, model
 from bluesky_discourse.baseline import evaluate
 from bluesky_discourse.train_tfidf import build_pipeline, evaluate_text
 from bluesky_discourse.validate_data import LABELS
+from bluesky_discourse.train_transformer import EncodedPosts, class_weights, make_weighted_loss, split_rows
 
 
 class ValidationTests(unittest.TestCase):
@@ -198,6 +200,78 @@ class TextClassifierTests(unittest.TestCase):
         rows[-1]["group_id"] = rows[0]["group_id"]
         with self.assertRaisesRegex(ValueError, "multiple folds"):
             evaluate_text(rows, "text_with_context")
+
+
+class TransformerTests(unittest.TestCase):
+    def fixture(self):
+        return TextClassifierTests().fixture()
+
+    def test_split_keeps_test_items_out_of_training(self):
+        train, test = split_rows(self.fixture(), 0, "text_only")
+        self.assertEqual((len(train), len(test)), (28, 7))
+        self.assertFalse({row["group_id"] for row in train} & {row["group_id"] for row in test})
+        before = class_weights(train)
+        for row in test:
+            row["final_label"] = "Explanation"
+        self.assertEqual(before, class_weights(train))
+
+    def test_weights_match_inverse_training_frequency(self):
+        train, _ = split_rows(self.fixture(), 0, "text_only")
+        train.append(dict(train[0], annotation_id="extra"))
+        weights = class_weights(train)
+        from bluesky_discourse.train_transformer import LABEL_ORDER
+        index = LABEL_ORDER.index(train[0]["final_label"])
+        self.assertAlmostEqual(weights[index], 29 / (7 * 5))
+
+    def test_labels_cannot_be_selected_as_transformer_input(self):
+        with self.assertRaisesRegex(ValueError, "Only text_only"):
+            split_rows(self.fixture(), 0, "final_label")
+
+    def test_transformer_split_rejects_group_overlap(self):
+        rows = self.fixture()
+        rows[-1]["group_id"] = rows[0]["group_id"]
+        with self.assertRaisesRegex(ValueError, "multiple folds"):
+            split_rows(rows, 0, "text_only")
+
+    def test_dataset_contains_only_tokens_and_numeric_labels(self):
+        def tokenizer(texts, **kwargs):
+            self.assertEqual(texts, ["[REPLY] example Acknowledgment"])
+            self.assertEqual(kwargs, {"truncation": True, "max_length": 256, "padding": False})
+            return {"input_ids": [[101, 102]], "attention_mask": [[1, 1]]}
+        dataset = EncodedPosts(tokenizer, self.fixture()[:1], "text_only")
+        self.assertEqual(set(dataset[0]), {"input_ids", "attention_mask", "labels"})
+        self.assertIsInstance(dataset[0]["labels"], int)
+
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "Optional PyTorch is not installed")
+    def test_weighted_loss_supports_backward_without_pretrained_download(self):
+        import torch
+        from types import SimpleNamespace
+        logits = torch.zeros((2, 7), requires_grad=True)
+        loss = make_weighted_loss([1.0] * 7)(SimpleNamespace(logits=logits), torch.tensor([0, 1]))
+        loss.backward()
+        self.assertIsNotNone(logits.grad)
+        self.assertTrue(torch.isfinite(logits.grad).all())
+
+    @unittest.skipUnless(importlib.util.find_spec("torch") and importlib.util.find_spec("transformers"),
+                         "Optional transformer packages are not installed")
+    def test_tiny_offline_distilbert_forward_backward_and_optimizer_step(self):
+        import torch
+        from transformers import DistilBertConfig, DistilBertForSequenceClassification
+        config = DistilBertConfig(vocab_size=32, max_position_embeddings=16,
+                                 n_layers=1, n_heads=2, dim=16, hidden_dim=32,
+                                 num_labels=7, dropout=0.0, attention_dropout=0.0)
+        config._attn_implementation = "eager"
+        model = DistilBertForSequenceClassification(config)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
+        output = model(input_ids=torch.tensor([[1, 2, 3], [4, 5, 6]]),
+                       attention_mask=torch.ones((2, 3), dtype=torch.long))
+        loss = make_weighted_loss([1.0] * 7)(output, torch.tensor([0, 1]))
+        loss.backward()
+        self.assertEqual(tuple(output.logits.shape), (2, 7))
+        self.assertTrue(torch.isfinite(loss))
+        before = model.classifier.weight.detach().clone()
+        optimizer.step()
+        self.assertFalse(torch.equal(before, model.classifier.weight))
 
 
 if __name__ == "__main__":

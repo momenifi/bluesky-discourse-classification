@@ -7,7 +7,7 @@ server, step by step.
 ## Files
 
 - `pyproject.toml`: Python package setup and pinned scikit-learn dependency.
-- `src/bluesky_discourse/`: validation, preparation, baseline, and text-classifier code.
+- `src/bluesky_discourse/`: validation, preparation, baseline, TF-IDF, and transformer code.
 - `data/`: final gold CSV, release manifest, and dataset instructions.
 - `docs/ANNOTATION_METHODOLOGY.md`: annotation and final-label procedure.
 - `docs/annotation_handbook_v2.docx`: definitions of the annotation categories.
@@ -421,3 +421,134 @@ command evaluates fold-specific models; it does not save a model fitted to all
 499 items. Retain the report, predictions, environment, and committed code
 revision for reproducibility. The next learning step is examining the confusion
 matrix and the failed Contextualization examples before choosing improvements.
+
+## Single-fold pretrained transformer run
+
+Added on 2026-10-15: `src/bluesky_discourse/train_transformer.py`. This is a
+one-fold DistilBERT experiment for checking GPU training and measuring runtime,
+not yet a complete five-fold transformer evaluation. No pretrained transformer
+training results are claimed until this script is run on GESIS.
+
+The checkpoint is
+[distilbert/distilbert-base-uncased](https://huggingface.co/distilbert/distilbert-base-uncased),
+pinned to revision `12040accade4e8a0f71eabdb258fecc2e7e948be` for both tokenizer
+and model. The encoder starts with pretrained weights; the seven-category
+classification head starts with new weights. All model parameters are fine-tuned.
+A warning that the classification-head weights are newly initialized is expected.
+The script uses safetensors and does not execute custom model repository code.
+
+The first planned run uses `text_only`, held-out fold 0 (100 items), and training
+folds 1-4 (399 items). Settings are fixed before this transformer run:
+
+| Setting | Value |
+| --- | --- |
+| Epochs | 3 |
+| Learning rate | 0.00002 |
+| Train/evaluation batch size | 8 |
+| Gradient accumulation | 1 |
+| Optimizer | PyTorch AdamW |
+| Weight decay | 0.01 |
+| Learning-rate schedule | Linear, 10% warmup |
+| Maximum input length | 256 tokenizer tokens, including special tokens |
+| Padding | Dynamic within each batch |
+| Loss | Balanced, weighted cross entropy |
+| Class weights | N_train / (7 * training count for the class) |
+| Random and data seeds | 42 |
+| Precision | Float32; no FP16, BF16, or TF32 |
+| Attention implementation | Eager |
+| Evaluation during training | None |
+| Early stopping / checkpoint selection | None |
+
+Unlike TF-IDF, the tokenizer's vocabulary comes from the pinned pretrained
+checkpoint and is not learned from this dataset. The model receives tokenized
+text and numeric labels, not annotation metadata. Class weights are calculated
+from training rows only. The script uses Hugging Face Trainer with a weighted
+loss callback and trains for exactly three epochs. It introduces the held-out
+dataset only after training ends and evaluates once. There is no held-out-score
+based parameter adjustment or checkpoint selection. Each invocation starts from
+the original checkpoint, including when a different fold is requested.
+
+The run truncates inputs longer than 256 tokens. The report counts inputs that
+reach this limit; that count includes both exactly-at-limit and truncated inputs.
+Seeded deterministic algorithms are enabled, but different hardware, drivers,
+or dependency versions can still affect results. Installed versions are recorded.
+
+### Environment already verified on GESIS
+
+- Conda environment: `bluesky-discourse`, Python 3.11.17.
+- PyTorch 2.6.0+cu124; CUDA available.
+- NumPy 2.4.6; scikit-learn 1.8.0.
+- Transformers 4.57.6; Accelerate 1.12.0; `pip check` passed.
+- All 16 pre-transformer tests and both CPU baselines reproduced successfully.
+- Installed packages recorded in `outputs/environment.txt`.
+
+`pyproject.toml` now declares the pinned optional `transformer` dependencies.
+The GPU-enabled PyTorch wheel was installed separately using the official
+CUDA 12.4 index before installing this optional dependency group.
+
+### Transfer and execute
+
+On Windows, commit and push these updated files to the private remote:
+
+```powershell
+git add README.md pyproject.toml src/bluesky_discourse/train_transformer.py tests/test_validate_data.py
+git commit -m "Add reproducible single-fold DistilBERT experiment"
+git push
+```
+
+On GESIS:
+
+```bash
+conda activate bluesky-discourse
+cd ~/bluesky-discourse-classification
+git pull --ff-only
+python -m pip install -e '.[transformer]'
+python -m pip check
+python -m unittest discover -s tests -v
+```
+
+Use the server's GPU allocation procedure. If a scheduler has already restricted
+the job to one GPU, keep its `CUDA_VISIBLE_DEVICES` setting and run the training
+command below directly. For a manually allocated GPU, enter its physical number
+when prompted; the prompt does not reserve a GPU:
+
+```bash
+read -r -p "Enter your allocated GPU number: " GPU_ID
+export CUDA_VISIBLE_DEVICES="$GPU_ID"
+python -c "import torch; print('Visible GPUs:', torch.cuda.device_count()); print('Selected:', torch.cuda.get_device_name(0))"
+python -m bluesky_discourse.train_transformer --fold 0 --text-column text_only
+```
+
+Exactly one GPU must be visible. The script refuses CPU-only or multi-GPU
+execution, preventing automatic use of all five shared GPUs. Logical CUDA
+device 0 inside the process refers to the selected GPU. Do not use `torchrun`
+or a distributed launcher. The first run requires network access to download
+the checkpoint, which Hugging Face caches for later runs. GPU availability and
+training duration have not yet been measured for this experiment.
+
+### Outputs and interpretation
+
+Only two result files are generated, in `outputs/distilbert_fold0_text_only/`:
+
+- `predictions.csv`: the 100 held-out items' IDs, groups, fold, variant, actual
+  labels, predicted labels, and correctness. Post text is not copied.
+- `report.json`: held-out accuracy/macro F1/weighted F1, per-category metrics,
+  confusion matrix, training-only class counts and weights, exact checkpoint
+  revision, full training arguments, tokenization settings, training and total
+  elapsed time, GPU name/memory, CUDA/dependency versions, and input/code hashes.
+
+No intermediate checkpoints, fitted model, or online tracking runs are saved.
+The script refuses a nonempty output directory to preserve earlier results.
+For an intentional repeated run, provide a new `--outdir` and record why. A
+single-fold result should be compared only with the corresponding fold of the
+earlier models, not their combined five-fold scores. The next step, after
+checking that this run completes, is to agree on the full evaluation protocol.
+Avoid tuning based on the fold 0 test score and presenting that fold as untouched.
+
+Record the code revision and environment after syncing, following the earlier
+commands. Locally, 23 tests passed, including split separation, training-only
+class weighting, feature-field restrictions, and weighted loss backpropagation.
+A tiny randomly initialized DistilBERT also completed a CPU forward/backward
+and optimizer-step test without downloads. Local testing used PyTorch 2.9.1+cpu
+and Transformers 4.57.3; the full Trainer/CUDA run with the pinned GESIS versions
+has not yet been executed and must be verified on the server.
