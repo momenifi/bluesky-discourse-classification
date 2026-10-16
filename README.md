@@ -1094,5 +1094,128 @@ DistilBERT trained through the actual Trainer callback. Additional tests cover
 deterministic group separation, tie handling, patience, invalid scores, split
 provenance, completed refit epochs, and selected-run summary handling. The
 integration test used temporarily installed Accelerate 1.12.0 with local
-PyTorch 2.9.1+cpu and Transformers 4.57.3. The pinned pretrained GPU run using
-this new mode has not yet been executed; it must be verified on GESIS.
+PyTorch 2.9.1+cpu and Transformers 4.57.3. The subsequent pinned pretrained GPU
+runs on GESIS are recorded below.
+
+### Verified GESIS selected-epoch results
+
+All five runs and their combined summary were copied from GESIS and verified
+locally on 2026-10-16 without retraining or modifying result files. Replaying
+the existing summary checks confirmed the training-data and fold provenance,
+prediction hashes, deterministic inner splits, validation stopping histories,
+selected/completed refit epochs, and one held-out prediction per item. The
+recomputed metrics, per-class report, confusion matrix, and fold records match
+the copied summary. Its predictions CSV also matches the recombined fold rows.
+
+The following are pooled out-of-fold scores over the same 499 v3 items and
+frozen outer folds, not averages of the five fold scores:
+
+| Model / input | Accuracy | Macro F1 | Weighted F1 |
+| --- | ---: | ---: | ---: |
+| TF-IDF + logistic regression, text only | 0.545090 | 0.430555 | 0.521608 |
+| DistilBERT, fixed three epochs, text only | 0.567134 | 0.431627 | 0.528396 |
+| DistilBERT, training-only epoch selection, text only | 0.627255 | 0.516022 | 0.613056 |
+
+Selected epochs for outer folds 0 through 4 were **6, 4, 6, 7, 5**. Selected-run
+fold macro F1 scores were 0.501361, 0.397871, 0.502387, 0.610918, and 0.552368.
+The combined model classified 313/499 items correctly, compared with 283/499
+for fixed-three-epoch training: an accuracy increase of 6.012 percentage points
+and macro F1 increase of 0.084395. These are observed differences, not a claim
+of statistical significance. Total selection-plus-refit training time was
+256.228 seconds; this excludes model-loading and other surrounding overhead.
+
+| Label | Support | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: | ---: |
+| Acknowledgment | 45 | 0.7308 | 0.8444 | 0.7835 |
+| Announcement | 126 | 0.6500 | 0.8254 | 0.7273 |
+| Contextualization | 12 | 0.0000 | 0.0000 | 0.0000 |
+| Critique | 51 | 0.4487 | 0.6863 | 0.5426 |
+| Evaluation | 58 | 0.5000 | 0.3103 | 0.3830 |
+| Explanation | 159 | 0.7440 | 0.5849 | 0.6549 |
+| Other | 48 | 0.5208 | 0.5208 | 0.5208 |
+
+Evaluation recall improved from 5/58 to 18/58. Contextualization was never
+predicted: its 12 items were classified as Critique (6), Explanation (5), and
+Other (1). Do not remove a class or revise gold labels merely to improve model
+scores. Rare-class support and the post-hoc v3 label review remain limitations;
+this experiment does not establish generalization to an untouched new dataset.
+
+Result directory: `outputs/v3/distilbert_selected_text_only_summary/`.
+Verified SHA-256 values:
+
+```text
+predictions.csv  8a80da35ac44057a0051bf406aaf9330a09aadafa56e6ef228287e227d2a1b90
+report.json      fe567012798f65ee6e6811bf79460e78e5f85188774e36620ebe8a665c365983
+```
+
+Only this README was updated during verification; labels, folds, training code,
+and all earlier and current result files were preserved.
+
+### Verified source-context experiment
+
+The five `outputs/v3/distilbert_selected_fold{k}_text_with_context/` folders
+were copied from GESIS and checked locally on 2026-10-16. The combined context
+summary folder was initially absent from the local copy. Calling `summarize_runs`
+in memory nevertheless verified all five folds, prediction hashes, data/fold
+provenance, settings consistency, training-only inner partitions, stopping
+histories, and completed refit epochs. Recomputed pooled scores match the
+reported GESIS summary; no model was trained and no result files were changed.
+
+The combined context summary was subsequently copied and verified against
+the recomputed report and all 499 recombined prediction rows. The predictions
+file hash matches the saved report. Verified summary directory:
+`outputs/v3/distilbert_selected_text_with_context_summary/`.
+
+```text
+predictions.csv  36930f53b36c4c198adffd8edfcbcdb767b5bc2fda1530d3548d7d0cdc42c138
+report.json      0db1f9a1d2a181bc532e73a0091e22990809e1c697d0baae307adc6710a1c906
+```
+
+| Selected-epoch DistilBERT input | Accuracy | Macro F1 | Weighted F1 |
+| --- | ---: | ---: | ---: |
+| Text only | 0.627255 | 0.516022 | 0.613056 |
+| Text with source-post context | 0.597194 | 0.482820 | 0.585503 |
+
+Context-run selected epochs were **6, 7, 5, 4, 7** for folds 0 through 4;
+total selection-plus-refit training time was 378.526 seconds. The context
+model classified 298/499 items correctly, versus 313/499 for text only.
+Macro F1 decreased by 0.033203 and accuracy by 3.006 percentage points.
+These are descriptive comparisons, not significance tests.
+
+Paired comparison of predictions on the same held-out items:
+
+| Items | Both correct | Only text correct | Only context correct | Both wrong |
+| --- | ---: | ---: | ---: | ---: |
+| All 499 | 260 | 53 | 38 | 148 |
+| 200 originals | 121 | 12 | 12 | 55 |
+| 299 replies | 139 | 41 | 26 | 93 |
+
+Reply accuracy decreased from 180/299 (60.20%) to 165/299 (55.18%); original
+accuracy remained 133/200 (66.50%). Predictions changed for 82 replies and
+29 originals, including wrong-to-wrong changes. Originals have identical
+input text across variants, but their predictions can still differ because
+the models train on different reply representations and select epochs
+separately. This compares two full training procedures, not a test-time-only
+context intervention or proof that particular context caused each change.
+
+Examples inspected against the prepared text and predictions (labels frozen):
+
+| Reply | Gold label | Text-only prediction | Context prediction |
+| --- | --- | --- | --- |
+| gold_0146 | Explanation | Announcement | Explanation |
+| gold_0321 | Evaluation | Other | Evaluation |
+| gold_0079 | Explanation | Explanation | Critique |
+| gold_0133 | Evaluation | Evaluation | Critique |
+
+Critique F1 fell from 0.5426 to 0.4296; Evaluation F1 from 0.3830 to 0.3368.
+Contextualization was again never predicted: its 12 examples were assigned
+to Announcement (1), Critique (5), Explanation (4), and Other (2).
+
+Only two held-out context inputs reached the 256-token limit (both in fold
+4), versus none for text-only. Reaching the limit does not itself prove
+truncation, and these counts give little support for widespread held-out
+truncation as the main explanation. Context is the collected source post,
+not necessarily the immediate parent. This experiment does not establish
+that context is generally unhelpful. Text-only selected-epoch DistilBERT
+remains the best observed configuration; label revision and repeated
+inspection of these folds mean results should still be reported as exploratory.
