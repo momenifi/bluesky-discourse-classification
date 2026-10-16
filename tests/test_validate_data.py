@@ -14,6 +14,7 @@ from bluesky_discourse.validate_data import LABELS
 from bluesky_discourse.train_transformer import EncodedPosts, class_weights, make_weighted_loss, split_rows
 from bluesky_discourse.train_transformer import MODEL_ID, MODEL_REVISION, summarize_runs
 from bluesky_discourse.build_gold_v3 import build_rows, read_table
+from bluesky_discourse.prepare_data import prepare_v3
 
 
 class ValidationTests(unittest.TestCase):
@@ -432,6 +433,92 @@ class GoldV3Tests(unittest.TestCase):
             path.write_text('annotation_id;;new_label_Contextualization\na;unexpected;Announcement\n', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "unnamed column content"):
                 read_table(path, review=True)
+
+
+class V3PreparationTests(unittest.TestCase):
+    def fixture(self, folder):
+        source_path, source_manifest_path = ValidationTests().fixture(folder, duplicate=True)
+        with source_path.open(encoding="utf-8-sig", newline="") as stream:
+            original = list(csv.DictReader(stream, delimiter=";"))
+        other_labels = sorted(LABELS - {"Contextualization"})
+        for index, row in enumerate(original):
+            row["final_label"] = "Contextualization" if index < 29 else other_labels[index % 6]
+        original[-1]["final_label"] = original[-2]["final_label"]
+        self.write_csv(source_path, original)
+        source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+        source_manifest["outputs"]["csv"]["sha256"] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        from collections import Counter
+        source_manifest["final_label_distribution"] = dict(Counter(row["final_label"] for row in original))
+        source_manifest_path.write_text(json.dumps(source_manifest), encoding="utf-8")
+        old_rows, old_report = prepare(source_path, source_manifest_path)
+        old_csv = folder / "training_v2.csv"
+        old_report_path = folder / "preparation_v2.json"
+        self.write_csv(old_csv, old_rows)
+        old_report["training_csv_sha256"] = hashlib.sha256(old_csv.read_bytes()).hexdigest()
+        old_report_path.write_text(json.dumps(old_report), encoding="utf-8")
+        reviewed = [dict(row, new_label_Contextualization="Announcement" if index < 17 else
+                         "Contextualization" if index < 29 else "", Comment_on_="")
+                    for index, row in enumerate(original)]
+        revised, review_report = build_rows(list(original[0]), original, reviewed)
+        revised_csv = folder / "gold_v3.csv"
+        revised_manifest_path = folder / "gold_v3_manifest.json"
+        self.write_csv(revised_csv, revised)
+        revised_manifest = {
+            **review_report, "version": 3, "rows": 500,
+            "inputs": {"v2_csv_sha256": old_report["input_csv_sha256"],
+                       "v2_manifest_sha256": old_report["input_manifest_sha256"]},
+            "outputs": {"csv": {"sha256": hashlib.sha256(revised_csv.read_bytes()).hexdigest()}},
+        }
+        revised_manifest_path.write_text(json.dumps(revised_manifest), encoding="utf-8")
+        return (revised_csv, revised_manifest_path, old_csv, old_report_path), old_rows
+
+    def write_csv(self, path, rows):
+        with path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=list(rows[0]), delimiter=";")
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def test_v3_keeps_reference_ids_groups_folds_and_model_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, old_rows = self.fixture(Path(tmp))
+            rows, report = prepare_v3(*args)
+            self.assertEqual(len(rows), 499)
+            self.assertEqual(report["changed_training_labels"], 17)
+            self.assertEqual(report["label_counts"]["Contextualization"], 12)
+            self.assertEqual([(row["annotation_id"], row["group_id"], row["fold"], row["text_only"], row["text_with_context"]) for row in rows],
+                             [(row["annotation_id"], row["group_id"], row["fold"], row["text_only"], row["text_with_context"]) for row in old_rows])
+
+    def test_v3_rejects_an_altered_release_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, _ = self.fixture(Path(tmp))
+            with args[0].open("ab") as stream:
+                stream.write(b"\n")
+            with self.assertRaisesRegex(ValueError, "CSV hash"):
+                prepare_v3(*args)
+
+    def test_v3_rejects_metadata_changes_even_if_manifest_hash_is_updated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, _ = self.fixture(Path(tmp))
+            _, revised = read_table(args[0])
+            revised[0]["annotation_text"] = "Unexpected changed text"
+            self.write_csv(args[0], revised)
+            manifest = json.loads(args[1].read_text(encoding="utf-8"))
+            manifest["outputs"]["csv"]["sha256"] = hashlib.sha256(args[0].read_bytes()).hexdigest()
+            args[1].write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Original metadata differs"):
+                prepare_v3(*args)
+
+    def test_v3_rejects_reference_fold_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args, _ = self.fixture(Path(tmp))
+            _, reference = read_table(args[2])
+            reference[0]["fold"] = str((int(reference[0]["fold"]) + 1) % 5)
+            self.write_csv(args[2], reference)
+            report = json.loads(args[3].read_text(encoding="utf-8"))
+            report["training_csv_sha256"] = hashlib.sha256(args[2].read_bytes()).hexdigest()
+            args[3].write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "fold assignments do not match"):
+                prepare_v3(*args)
 
 
 if __name__ == "__main__":

@@ -805,8 +805,85 @@ original inter-annotator agreement using the revised final labels. Any future
 model results on v3 must be reported as exploratory post-hoc label-revision
 experiments; this release does not create a fresh untouched test set.
 
-No retraining or fold reassignment was performed. The existing preparation
-validator and scripts remain specific to v2. The next implementation step is
-explicit v3 preparation reusing the original item/group/fold mapping, with
-separate output paths. Do not feed v3 into the existing v2 preparation command
-or overwrite the original experiment outputs.
+No retraining or fold reassignment was performed. Explicit v3 preparation was
+subsequently added to the existing script, as described below. The standalone
+validator remains specific to v2. Use the explicit v3 option and separate paths
+rather than overwriting the original experiment outputs.
+
+## Prepare v3 with frozen v2 folds
+
+Implemented in `prepare_v3()` in the existing `prepare_data.py`; no new script
+was added. On GESIS, after syncing these code changes, run:
+
+```bash
+python -m unittest discover -s tests -v
+python -m bluesky_discourse.prepare_data --gold-version v3
+```
+
+Inputs are `data/final_gold_dataset_v3.csv`, its release manifest, and the
+existing `outputs/training_data.csv` plus `outputs/preparation_report.json`
+from v2. Keep these v2 reference outputs. The command checks source hashes,
+review decisions, reference provenance, and the original fold assignment hash.
+It retains exactly the same sampled IDs, excludes the same duplicate, verifies
+metadata against the reference, and recomputes both model-text variants to
+confirm they are unchanged. It also checks that reconstructed connection groups
+match the frozen v2 groups. The preserved v2 fold values are copied, not
+recalculated by a stratification algorithm.
+
+The only generated files are:
+
+- `outputs/v3/training_data.csv`: the same 499 unique posts with revised targets,
+  review provenance, identical model text, and the original groups and folds.
+- `outputs/v3/preparation_report.json`: v3 hashes, label counts, 17 changed IDs,
+  v2 reference hashes, fold-assignment hash, unchanged-input checks, and updated
+  test-label counts for each frozen fold.
+
+Defaults preserve v2 behavior when `--gold-version` is omitted. V3 uses
+`outputs/v3/` by default and rejects output paths that overwrite its v2 reference
+files. `--seed` is not accepted for v3 because it performs no new fold assignment.
+`--v2-training-csv` and `--v2-preparation-report` can explicitly locate archived
+reference outputs. Missing or inconsistent reference files stop preparation;
+the script does not silently replace the original folds.
+
+The revised labels no longer have the original exact stratification balance.
+All seven labels remain present in every training and test partition in this
+release, but test Contextualization counts are now:
+
+| Fold | Total test items | Contextualization test items |
+| --- | ---: | ---: |
+| 0 | 100 | 3 |
+| 1 | 100 | 3 |
+| 2 | 100 | 2 |
+| 3 | 100 | 1 |
+| 4 | 99 | 3 |
+
+Training counts after duplicate exclusion are Acknowledgment 45, Announcement
+126, Contextualization 12, Critique 51, Evaluation 58, Explanation 159, and Other
+48. There are still 292 connected groups. The 500-row release has one additional
+Evaluation record, the excluded duplicate `gold_0419`.
+
+Verified local v3 training CSV SHA-256:
+
+```text
+4dfe7e866280a88eb24a6569bfd424c9552c8069d8ff7d3c5dd9679ffdad13d7
+```
+
+The assignment hash is unchanged from v2:
+
+```text
+93561e27d0625a89cc42a51c9704899e1e688d01acbe9174c4f2a4b6aeb324ed
+```
+
+All 38 tests passed. The additional tests check preserved IDs/groups/folds/text,
+revised labels, corrupt release hashes, unexpected metadata edits even with an
+updated release hash, and changed reference fold assignments. A full comparison
+of the actual generated files verified all 499 items and the unchanged v2
+reference file hashes. No models were trained during preparation.
+
+Only after verifying this step on GESIS should training be rerun with explicit
+`--csv outputs/v3/training_data.csv`,
+`--preparation-report outputs/v3/preparation_report.json`, and separate v3 output
+directories. Compare models within v3 using the same revised targets and frozen
+folds. Differences between v2 and v3 scores reflect changed evaluation labels
+as well as retraining and must not be described solely as model improvements.
+The v3 results remain exploratory following error-informed label revision.

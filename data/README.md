@@ -44,6 +44,12 @@ Rebuild without overwriting the released files:
 python -m bluesky_discourse.build_gold_v3 --outdir outputs/rebuild_gold_v3
 ```
 
-The current preparation commands remain specific to v2. V3 preparation must
-be implemented explicitly and retain the saved v2 folds; do not pass v3 to the
-existing v2 validator or regenerate folds from its revised labels.
+Prepare v3 while retaining the existing v2 folds:
+
+```bash
+python -m bluesky_discourse.prepare_data --gold-version v3
+```
+
+This requires the original `outputs/training_data.csv` and preparation report.
+It writes separate outputs under `outputs/v3/`. The standalone validator remains
+specific to v2; v3 preparation performs its own release and reference checks.
