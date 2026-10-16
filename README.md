@@ -887,3 +887,212 @@ directories. Compare models within v3 using the same revised targets and frozen
 folds. Differences between v2 and v3 scores reflect changed evaluation labels
 as well as retraining and must not be described solely as model improvements.
 The v3 results remain exploratory following error-informed label revision.
+
+### GESIS v3 preparation verified
+
+The researcher prepared v3 on GESIS and copied its training CSV and preparation
+report back to Windows. Inspection verified the downloaded CSV hash equals
+`4dfe7e866280a88eb24a6569bfd424c9552c8069d8ff7d3c5dd9679ffdad13d7`,
+identical to local v3 preparation. All 499 rows match the v3 release metadata;
+IDs, URIs, groups, folds, and both text inputs match the v2 training data.
+Exactly 17 final labels differ. The same duplicate is excluded, there are
+292 groups, and no group crosses folds. Manifest hashes and revised label
+counts match. All seven classes remain present in every training partition.
+
+The GESIS report references its original v2 preparation report, whose byte hash
+differs from the local v2 preparation report. This is expected with different
+environment metadata (local Python 3.12.7/NumPy 1.26.4 versus GESIS Python
+3.11.17/NumPy 2.4.6). The referenced GESIS report, training data, and fold hashes
+all match the archived GESIS v2 transformer summary provenance. The data and
+fold assignments themselves are identical across environments. No files were
+repaired, labels revised, or models retrained during this verification.
+
+## Verified v3 model results on GESIS
+
+The researcher copied the complete v3 experiment outputs back to Windows.
+Inspection checked all five transformer fold reports and prediction hashes,
+recomputed the 499-item held-out scores and confusion matrix, and matched the
+saved combined summary. CPU baseline and both TF-IDF variants were also
+verified against their prediction-file hashes, actual v3 labels, and fold IDs.
+All models used the same training-data hash and frozen assignment hash.
+
+| V3 model | Accuracy | Macro F1 | Weighted F1 |
+| --- | ---: | ---: | ---: |
+| Majority baseline | 0.318637 | 0.069040 | 0.153992 |
+| TF-IDF, text only | 0.545090 | 0.430555 | 0.521608 |
+| TF-IDF, text with context | 0.486974 | 0.375268 | 0.473321 |
+| DistilBERT, text only | 0.567134 | 0.431627 | 0.528396 |
+
+DistilBERT correctly classified 283 items, versus 272 for text-only TF-IDF.
+Its macro F1 advantage is 0.001072; this small observed difference does not
+establish superiority or statistical significance. Per-category F1 shows
+different strengths rather than consistent improvement:
+
+| Label | Text-only TF-IDF F1 | Text-only DistilBERT F1 |
+| --- | ---: | ---: |
+| Acknowledgment | 0.7955 | 0.7091 |
+| Announcement | 0.7184 | 0.7024 |
+| Contextualization | 0.0000 | 0.0000 |
+| Critique | 0.4088 | 0.4662 |
+| Evaluation | 0.2316 | 0.1408 |
+| Explanation | 0.5263 | 0.5692 |
+| Other | 0.3333 | 0.4337 |
+
+DistilBERT never predicts Contextualization. Its 12 gold examples are assigned
+to Critique (6), Explanation (3), Announcement (2), and Other (1). Only 5/58
+Evaluation items are correct; the other 53 are assigned to Announcement (27),
+Acknowledgment (8), Critique (8), Other (6), and Explanation (4). Of 159
+Explanation items, 72 are correct, 52 become Announcement, and 32 become
+Critique. Across all items, the model predicts Announcement 210 times.
+
+### Runtime investigation
+
+V3 reported 65.8 seconds of summed training time versus 546.2 seconds for v2.
+The five original v2 reports were available and compared with their v3
+counterparts. Both experiments recorded RTX 2080 Ti GPUs, and v3 selected
+physical GPU 1. All five v3 runs recorded completed epoch 3.0, the expected
+399 or 400 training items, and 100 or 99 held-out items. Normalized training
+arguments, model revision, tokenization, attention implementation, weighted-loss
+description, and library versions match between v2 and v3. Recorded training
+FLOP counts are identical for each corresponding fold. Thus there is no recorded
+evidence that v3 skipped epochs or processed less training input.
+
+The reports do not capture sufficient CPU/threading, GPU contention, or clock
+information to determine the runtime cause. A different GPU model or reduced
+epoch count is not supported by the inspected files. Treat shared-server
+runtime as descriptive, not a controlled hardware benchmark; do not infer an
+algorithmic speed improvement from this difference.
+
+The reviewed labels alone did not resolve the small-class problem. Keep v3 and
+the current results frozen. Any next hyperparameter experiment should define
+group-aware validation inside each outer training partition, leaving the outer
+test fold out of checkpoint/epoch selection. Do not keep revising gold labels
+to increase agreement with model predictions. These v3 results remain an
+exploratory analysis following model-informed label review.
+
+Verified downloaded transformer summary artifacts:
+
+```text
+Report:      e6605bcc904b048b3323799bdd4491f175db10e7317ba40ff605215168e0d294
+Predictions: f066b5ea47bb86a52815a3545ed34247dcfebe6171e6a9455be68b141b34da09
+```
+
+No labels, folds, model settings, or result files were changed and no models
+were retrained during this inspection. The README records the findings.
+
+## Training-only validation for epoch selection
+
+The next experiment is implemented as `--select-epochs` in the existing
+`train_transformer.py`. No new training script or data release was added.
+The fixed three-epoch mode and its original directories remain available.
+The v3 data, labels, text-only input, and outer folds stay frozen.
+
+The protocol is fixed before the new model run:
+
+1. For each outer fold, take only its training rows and sort by annotation ID.
+2. Use `StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)` to
+   construct inner candidates. Choose the first candidate whose training and
+   validation portions both contain all seven labels. This choice uses label
+   coverage only, never model scores. It is one inner holdout, not a full
+   five-fold inner cross-validation search.
+3. Start from the pinned pretrained checkpoint. Fit on the inner-training
+   portion and score inner-validation macro F1 after each complete epoch.
+   Allow at most 10 epochs and stop after two consecutive epochs without a
+   strictly higher score. Equal scores retain the earliest best epoch.
+4. Discard the selection-stage model. Reset seed 42 and load the original
+   pretrained checkpoint again. Refit on the full outer training portion for
+   the selected number of epochs, then evaluate the outer test set once.
+
+The learning rate, optimizer, batch size, tokenizer limit, class-weight rule,
+and other settings remain as in the earlier experiment. Class weights are
+computed from inner-training labels for selection and full outer-training
+labels for refitting. The linear schedule is calculated for each stage's own
+training budget. No model state or optimizer state is carried from selection
+to refitting. No test dataset is supplied to the selection Trainer, and the
+outer test scores do not determine stopping, epoch selection, or checkpoints.
+
+Verified inner partitions on the actual v3 dataset:
+
+| Outer fold | Inner training | Inner validation | Outer test | Contextualization in validation |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 319 | 80 | 100 | 2 |
+| 1 | 319 | 80 | 100 | 1 |
+| 2 | 319 | 80 | 100 | 2 |
+| 3 | 319 | 80 | 100 | 2 |
+| 4 | 320 | 80 | 99 | 1 |
+
+Inner fold 0 satisfies coverage in all five cases. Inner training, validation,
+and outer testing share no connected groups. Validation contains very few
+Contextualization examples, so its class-specific signal and the selected
+epoch count can be unstable. This procedure is a controlled experiment, not a
+guarantee of improvement. Previous error analysis and v3 review mean the overall
+study remains exploratory; training-only validation does not create an untouched
+test set retrospectively.
+
+### Run the first selected-epoch fold
+
+On Windows, commit and push the updated existing files:
+
+```powershell
+git add README.md src/bluesky_discourse/train_transformer.py tests/test_validate_data.py
+git commit -m "Add training-only validation and epoch selection"
+git push
+```
+
+On GESIS, activate the project environment, pull, and run tests. Use the same
+server GPU allocation procedure as before. Exactly one allocated GPU must be
+visible; the production script still requires CUDA. The test suite's toy Trainer
+experiment is explicitly forced to CPU, even on a server with GPUs.
+
+```bash
+conda activate bluesky-discourse
+cd ~/bluesky-discourse-classification
+git pull --ff-only
+python -m unittest discover -s tests -v
+python -m bluesky_discourse.train_transformer \
+  --select-epochs \
+  --csv outputs/v3/training_data.csv \
+  --preparation-report outputs/v3/preparation_report.json \
+  --fold 0 --text-column text_only \
+  --outdir outputs/v3/distilbert_selected_fold0_text_only
+```
+
+For manual GPU allocation, set `CUDA_VISIBLE_DEVICES` to the permitted GPU
+before the training command; keep a scheduler's existing restriction if one
+is provided. The first run checks execution of this protocol. Do not modify
+settings in response to its outer test score before completing the other folds.
+
+After verifying execution, run the same command for folds 1 through 4 with
+their corresponding new output directories. To summarize all five selected
+runs, use both flags:
+
+```bash
+python -m bluesky_discourse.train_transformer \
+  --summarize --select-epochs \
+  --csv outputs/v3/training_data.csv \
+  --preparation-report outputs/v3/preparation_report.json \
+  --runs-dir outputs/v3 --text-column text_only
+```
+
+Each new fold still generates only `predictions.csv` and `report.json`.
+The report additionally records inner split IDs/counts, validation score
+history, stopping protocol, selected epochs, selection-only class weights,
+selection training arguments, and separate selection/refit times. Its
+`training_seconds` now includes both stages, unlike the previous single-stage
+experiment, so runtime comparisons must account for that difference.
+Intermediate checkpoints and final model files are not saved.
+
+Selected runs use `distilbert_selected_fold{k}_text_only/`, and their summary
+uses `outputs/v3/distilbert_selected_text_only_summary/`. They cannot be mixed
+with fixed-epoch runs. Summary checks replay the stopping rule and verify the
+recorded inner split against the outer training rows, selected and completed
+refit epochs, and inner class weights. Different selected epoch counts across
+folds are allowed intentionally; all other recorded settings must agree.
+
+Verification: all 45 tests passed locally, including a tiny offline CPU
+DistilBERT trained through the actual Trainer callback. Additional tests cover
+deterministic group separation, tie handling, patience, invalid scores, split
+provenance, completed refit epochs, and selected-run summary handling. The
+integration test used temporarily installed Accelerate 1.12.0 with local
+PyTorch 2.9.1+cpu and Transformers 4.57.3. The pinned pretrained GPU run using
+this new mode has not yet been executed; it must be verified on GESIS.

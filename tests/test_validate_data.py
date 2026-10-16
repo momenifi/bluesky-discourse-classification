@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import importlib.util
 from pathlib import Path
+from unittest.mock import patch
 
 from bluesky_discourse.validate_data import validate
 from bluesky_discourse.prepare_data import assign_folds, connected_groups, model_text, prepare
@@ -15,6 +16,7 @@ from bluesky_discourse.train_transformer import EncodedPosts, class_weights, mak
 from bluesky_discourse.train_transformer import MODEL_ID, MODEL_REVISION, summarize_runs
 from bluesky_discourse.build_gold_v3 import build_rows, read_table
 from bluesky_discourse.prepare_data import prepare_v3
+from bluesky_discourse.train_transformer import EpochChoice, SELECTION_PROTOCOL, validation_split, check_selection_report, select_epoch_count
 
 
 class ValidationTests(unittest.TestCase):
@@ -519,6 +521,107 @@ class V3PreparationTests(unittest.TestCase):
             args[3].write_text(json.dumps(report), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "fold assignments do not match"):
                 prepare_v3(*args)
+
+
+class EpochSelectionTests(unittest.TestCase):
+    def fixture(self):
+        return [{"annotation_id": f"inner_{index:03d}", "uri": f"uri:{index}",
+                 "group_id": f"group:{index // 2}", "final_label": sorted(LABELS)[index % 7],
+                 "text_only": "Example text"} for index in range(140)]
+
+    def test_inner_split_keeps_groups_separate_and_is_order_independent(self):
+        rows = self.fixture()
+        fit, validation, report = validation_split(rows)
+        self.assertEqual({row["annotation_id"] for row in fit + validation}, {row["annotation_id"] for row in rows})
+        self.assertFalse({row["group_id"] for row in fit} & {row["group_id"] for row in validation})
+        self.assertEqual({row["final_label"] for row in fit}, LABELS)
+        self.assertEqual({row["final_label"] for row in validation}, LABELS)
+        self.assertEqual(report, validation_split(list(reversed(rows)))[2])
+
+    def test_epoch_choice_keeps_earliest_best_and_stops_after_two_nonimprovements(self):
+        tracker = EpochChoice()
+        self.assertFalse(tracker.observe(1, 0.2))
+        self.assertFalse(tracker.observe(2, 0.4))
+        self.assertFalse(tracker.observe(3, 0.4))
+        self.assertTrue(tracker.observe(4, 0.3))
+        self.assertEqual(tracker.best_epoch, 2)
+
+    def test_epoch_choice_rejects_invalid_metrics(self):
+        with self.assertRaises(ValueError):
+            EpochChoice().observe(1, float("nan"))
+        with self.assertRaises(ValueError):
+            EpochChoice().observe(2, 0.3)
+
+    def selection_report(self):
+        fit, _, split = validation_split(self.fixture())
+        return {
+            "selected_epochs": 2, "training_arguments": {"num_train_epochs": 2},
+            "training_metrics": {"epoch": 2.0},
+            "epoch_selection": {"protocol": dict(SELECTION_PROTOCOL), "split": split,
+                "selected_epochs": 2, "best_validation_macro_f1": 0.4,
+                "validation_history": [{"epoch": 1, "macro_f1": 0.2}, {"epoch": 2, "macro_f1": 0.4},
+                                       {"epoch": 3, "macro_f1": 0.3}, {"epoch": 4, "macro_f1": 0.3}],
+                "fit_class_weights": dict(zip(sorted(LABELS), class_weights(fit)))},
+        }
+
+    def test_selection_provenance_is_checked_against_outer_training_only(self):
+        report = self.selection_report()
+        check_selection_report(report, self.fixture())
+        report["epoch_selection"]["split"]["validation_annotation_ids"].append("outer_test_item")
+        with self.assertRaisesRegex(ValueError, "inner split differs"):
+            check_selection_report(report, self.fixture())
+
+    def test_refit_must_complete_the_selected_epochs(self):
+        report = self.selection_report()
+        report["training_metrics"]["epoch"] = 1.0
+        with self.assertRaisesRegex(ValueError, "completed refit epochs differ"):
+            check_selection_report(report, self.fixture())
+
+    def test_selected_summary_permits_different_epoch_counts_but_separates_protocols(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = TransformerSummaryTests().fixture(Path(tmp))
+            for fold in range(5):
+                original = Path(tmp) / f"distilbert_fold{fold}_text_only"
+                folder = Path(tmp) / f"distilbert_selected_fold{fold}_text_only"
+                original.rename(folder)
+                path = folder / "report.json"
+                report = json.loads(path.read_text(encoding="utf-8"))
+                report.update(protocol="training_only_epoch_selection", selected_epochs=fold + 1,
+                              epoch_selection={"protocol": dict(SELECTION_PROTOCOL),
+                                               "training_arguments": {"num_train_epochs": 10}})
+                report["training_arguments"]["num_train_epochs"] = fold + 1
+                path.write_text(json.dumps(report), encoding="utf-8")
+            with patch('bluesky_discourse.train_transformer.check_selection_report') as checker:
+                _, report = summarize_runs(*args, selected_epochs=True)
+                self.assertEqual(checker.call_count, 5)
+            self.assertEqual([fold["selected_epochs"] for fold in report["fold_results"]], [1, 2, 3, 4, 5])
+
+    @unittest.skipUnless(all(importlib.util.find_spec(name) for name in ("torch", "transformers", "accelerate")),
+                         "Optional transformer training packages are not installed")
+    def test_actual_trainer_callback_with_tiny_cpu_model_and_no_download(self):
+        from tokenizers import Tokenizer
+        from tokenizers.models import WordLevel
+        from tokenizers.pre_tokenizers import Whitespace
+        from transformers import PreTrainedTokenizerFast, DistilBertConfig, DistilBertForSequenceClassification
+        from bluesky_discourse.train_transformer import training_arguments as real_training_arguments
+        backend = Tokenizer(WordLevel({"[UNK]": 0, "[PAD]": 1, "Example": 2, "text": 3}, unk_token="[UNK]"))
+        backend.pre_tokenizer = Whitespace()
+        tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]")
+        def tiny_model():
+            config = DistilBertConfig(vocab_size=4, max_position_embeddings=256,
+                                     n_layers=1, n_heads=2, dim=16, hidden_dim=32, num_labels=7)
+            config._attn_implementation = "eager"
+            return DistilBertForSequenceClassification(config)
+        def cpu_arguments(path, epochs, *, validation=False):
+            return real_training_arguments(path, epochs, validation=validation, use_cpu=True)
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(SELECTION_PROTOCOL, {"max_epochs": 3}), \
+                patch('bluesky_discourse.train_transformer.new_model', side_effect=tiny_model), \
+                patch('bluesky_discourse.train_transformer.training_arguments', side_effect=cpu_arguments), \
+                patch('torch.cuda.synchronize'), patch('torch.cuda.empty_cache'):
+            result = select_epoch_count(self.fixture(), tokenizer, "text_only", Path(tmp))
+            self.assertIn(result["selected_epochs"], (1, 2, 3))
+            self.assertTrue(result["validation_history"])
+            self.assertEqual(list(Path(tmp).rglob('*')), [])
 
 
 if __name__ == "__main__":
