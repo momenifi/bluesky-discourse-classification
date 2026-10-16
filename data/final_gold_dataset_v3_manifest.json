@@ -1,0 +1,324 @@
+{
+  "reviewed_rows": 29,
+  "changed_rows": 17,
+  "retained_review_labels": 12,
+  "reviewed_annotations": [
+    {
+      "annotation_id": "gold_0002",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0019",
+      "old_label": "Contextualization",
+      "new_label": "Announcement",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0032",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "ambiguous",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0049",
+      "old_label": "Contextualization",
+      "new_label": "Explanation",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0060",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0061",
+      "old_label": "Contextualization",
+      "new_label": "Other",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0064",
+      "old_label": "Contextualization",
+      "new_label": "Evaluation",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0069",
+      "old_label": "Contextualization",
+      "new_label": "Announcement",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0081",
+      "old_label": "Contextualization",
+      "new_label": "Announcement",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0082",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0151",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0156",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0171",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": true
+    },
+    {
+      "annotation_id": "gold_0175",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "Ambiguous",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0209",
+      "old_label": "Contextualization",
+      "new_label": "Announcement",
+      "changed": true,
+      "comment": "Ambiguous",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0267",
+      "old_label": "Contextualization",
+      "new_label": "Explanation",
+      "changed": true,
+      "comment": "boundary with Announcement",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0273",
+      "old_label": "Contextualization",
+      "new_label": "Announcement",
+      "changed": true,
+      "comment": "Ambiguous",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0305",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0324",
+      "old_label": "Contextualization",
+      "new_label": "Announcement",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0330",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "boundary with Announcement",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0337",
+      "old_label": "Contextualization",
+      "new_label": "Announcement",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0398",
+      "old_label": "Contextualization",
+      "new_label": "Explanation",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0399",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0403",
+      "old_label": "Contextualization",
+      "new_label": "Explanation",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": true
+    },
+    {
+      "annotation_id": "gold_0427",
+      "old_label": "Contextualization",
+      "new_label": "Evaluation",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": false
+    },
+    {
+      "annotation_id": "gold_0439",
+      "old_label": "Contextualization",
+      "new_label": "Critique",
+      "changed": true,
+      "comment": "Ambiguous",
+      "additional_parent_context_inspected": true
+    },
+    {
+      "annotation_id": "gold_0444",
+      "old_label": "Contextualization",
+      "new_label": "Evaluation",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": true
+    },
+    {
+      "annotation_id": "gold_0470",
+      "old_label": "Contextualization",
+      "new_label": "Contextualization",
+      "changed": false,
+      "comment": "",
+      "additional_parent_context_inspected": true
+    },
+    {
+      "annotation_id": "gold_0476",
+      "old_label": "Contextualization",
+      "new_label": "Explanation",
+      "changed": true,
+      "comment": "",
+      "additional_parent_context_inspected": true
+    }
+  ],
+  "ignored_review_metadata_edits": [
+    {
+      "annotation_id": "gold_0043",
+      "column": "doi",
+      "review_value": "101.126",
+      "preserved_v2_value": "10.1126"
+    },
+    {
+      "annotation_id": "gold_0194",
+      "column": "doi",
+      "review_value": "101.126",
+      "preserved_v2_value": "10.1126"
+    },
+    {
+      "annotation_id": "gold_0275",
+      "column": "doi",
+      "review_value": "101.126",
+      "preserved_v2_value": "10.1126"
+    },
+    {
+      "annotation_id": "gold_0440",
+      "column": "doi",
+      "review_value": "101.126",
+      "preserved_v2_value": "10.1126"
+    },
+    {
+      "annotation_id": "gold_0444",
+      "column": "doi",
+      "review_value": "101.126",
+      "preserved_v2_value": "10.1126"
+    },
+    {
+      "annotation_id": "gold_0483",
+      "column": "doi",
+      "review_value": "101.126",
+      "preserved_v2_value": "10.1126"
+    }
+  ],
+  "final_label_distribution": {
+    "Acknowledgment": 45,
+    "Announcement": 126,
+    "Contextualization": 12,
+    "Critique": 51,
+    "Evaluation": 59,
+    "Explanation": 159,
+    "Other": 48
+  },
+  "final_label_source_counts": {
+    "human_adjudication_with_llm_support": 50,
+    "human_majority": 433,
+    "posthoc_handbook_review": 17
+  },
+  "dataset": "Bluesky scholarly discourse gold dataset v3",
+  "version": 3,
+  "rows": 500,
+  "unique_annotation_ids": 500,
+  "unique_post_uris": 499,
+  "allowed_labels": [
+    "Acknowledgment",
+    "Announcement",
+    "Contextualization",
+    "Critique",
+    "Evaluation",
+    "Explanation",
+    "Other"
+  ],
+  "review_method": "Researcher handbook review with assistant support after model-error inspection; not blind or an independent rater",
+  "review_scope": "Only the 29 items originally labeled Contextualization",
+  "metadata_rule": "All original metadata and annotator fields come exclusively from validated v2",
+  "evaluation_status": "Post-hoc label revision; future scores are exploratory, not an untouched test estimate",
+  "context_note": "Additional parent replies inspected for six listed items; source texts and context_text are unchanged",
+  "training_status": "500 annotation records; duplicate gold_0419 remains in the release and must still be excluded for training",
+  "fold_status": "No new folds assigned; reuse the saved v2 item/group/fold mapping for subsequent comparison",
+  "inputs": {
+    "v2_csv_sha256": "2f6e04a7c6c509d04c6a7784aa3e99d39dc00113f1a6301ff9568c29b8d4feff",
+    "v2_manifest_sha256": "aea6f5d05bf412eb649d28e1aa13e932a99e87f24ee13e8e5ca6faa0c32ac225",
+    "review_csv_sha256": "8e76b4d61af1724fb2bcd080806445703a651f375c5f6b349aa096a3476e5e82"
+  },
+  "builder_sha256": "e118e3a3da3aa4cb1de307f0fcc25aafd8119065db7c18a626d45c8a0f1f68d2",
+  "outputs": {
+    "csv": {
+      "path": "final_gold_dataset_v3.csv",
+      "sha256": "b6125c5efa21bf2bfc7cc4313136fae7fb93d716ed9bb1549aeda022f3952f0b"
+    }
+  }
+}

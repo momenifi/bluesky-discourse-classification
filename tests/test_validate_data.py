@@ -13,6 +13,7 @@ from bluesky_discourse.train_tfidf import build_pipeline, evaluate_text
 from bluesky_discourse.validate_data import LABELS
 from bluesky_discourse.train_transformer import EncodedPosts, class_weights, make_weighted_loss, split_rows
 from bluesky_discourse.train_transformer import MODEL_ID, MODEL_REVISION, summarize_runs
+from bluesky_discourse.build_gold_v3 import build_rows, read_table
 
 
 class ValidationTests(unittest.TestCase):
@@ -370,6 +371,67 @@ class TransformerSummaryTests(unittest.TestCase):
             report_path.write_text(json.dumps(report), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "missing, repeated, or unexpected"):
                 summarize_runs(*args)
+
+
+class GoldV3Tests(unittest.TestCase):
+    def fixture(self):
+        original = [{"annotation_id": f"gold_{i:04d}", "annotation_text": "Unchanged text",
+                     "doi": "10.1234/example", "final_label": "Contextualization",
+                     "final_label_source": "human_majority", "ramin_label": "Contextualization",
+                     "sarah_label": "Contextualization", "fakhri_label": "Contextualization"}
+                    for i in range(1, 30)]
+        original.append(dict(original[0], annotation_id="gold_0043", doi="10.1126", final_label="Explanation"))
+        reviewed = [dict(row, new_label_Contextualization="Contextualization" if i < 29 else "", Comment_on_="")
+                    for i, row in enumerate(original)]
+        reviewed[0]["new_label_Contextualization"] = "Announcement"
+        return list(original[0]), original, reviewed
+
+    def test_v3_changes_only_reviewed_final_labels_and_preserves_human_labels(self):
+        columns, original, reviewed = self.fixture()
+        rows, report = build_rows(columns, original, reviewed)
+        self.assertEqual(report["reviewed_rows"], 29)
+        self.assertEqual(report["changed_rows"], 1)
+        self.assertEqual(rows[0]["final_label"], "Announcement")
+        self.assertEqual(rows[0]["final_label_v2"], "Contextualization")
+        self.assertEqual(rows[0]["final_label_source"], "posthoc_handbook_review")
+        self.assertEqual(rows[0]["ramin_label"], original[0]["ramin_label"])
+        self.assertEqual(original[0]["final_label"], "Contextualization")
+
+    def test_confirmed_spreadsheet_doi_mistake_is_recorded_and_not_propagated(self):
+        columns, original, reviewed = self.fixture()
+        reviewed[-1]["doi"] = "101.126"
+        rows, report = build_rows(columns, original, reviewed)
+        self.assertEqual(rows[-1]["doi"], "10.1126")
+        self.assertEqual(len(report["ignored_review_metadata_edits"]), 1)
+
+    def test_unexpected_text_changes_are_rejected(self):
+        columns, original, reviewed = self.fixture()
+        reviewed[0]["annotation_text"] = "Altered text"
+        with self.assertRaisesRegex(ValueError, "Unexpected original-field edit"):
+            build_rows(columns, original, reviewed)
+
+    def test_missing_review_decision_is_rejected(self):
+        columns, original, reviewed = self.fixture()
+        reviewed[0]["new_label_Contextualization"] = ""
+        with self.assertRaisesRegex(ValueError, "Missing or invalid review label"):
+            build_rows(columns, original, reviewed)
+
+    def test_review_outside_contextualization_is_rejected(self):
+        columns, original, reviewed = self.fixture()
+        reviewed[-1]["new_label_Contextualization"] = "Other"
+        with self.assertRaisesRegex(ValueError, "outside the agreed"):
+            build_rows(columns, original, reviewed)
+
+    def test_empty_spreadsheet_columns_are_ignored_but_filled_ones_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "review.csv"
+            path.write_text('annotation_id;;new_label_Contextualization\na;;Announcement\n', encoding="utf-8")
+            columns, rows = read_table(path, review=True)
+            self.assertNotIn("", columns)
+            self.assertEqual(rows[0]["annotation_id"], "a")
+            path.write_text('annotation_id;;new_label_Contextualization\na;unexpected;Announcement\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unnamed column content"):
+                read_table(path, review=True)
 
 
 if __name__ == "__main__":

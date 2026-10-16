@@ -1,3 +1,6 @@
 # Preserve release hashes across Windows and Linux checkouts.
 data/final_gold_dataset_v2.csv -text
 data/final_gold_dataset_v2_manifest.json -text
+data/contextualization_review.csv -text
+data/final_gold_dataset_v3.csv -text
+data/final_gold_dataset_v3_manifest.json -text

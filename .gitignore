@@ -18,6 +18,9 @@ data/*
 !data/README.md
 !data/final_gold_dataset_v2.csv
 !data/final_gold_dataset_v2_manifest.json
+!data/contextualization_review.csv
+!data/final_gold_dataset_v3.csv
+!data/final_gold_dataset_v3_manifest.json
 outputs/
 models/
 

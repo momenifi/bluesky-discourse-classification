@@ -19,3 +19,31 @@ suggestions, adjudication fields, and label provenance from model features.
 Expected dataset: 500 unique annotation IDs, no missing final labels, and seven
 discourse categories. Step 2 will verify these properties and record the input
 file hash before we create training inputs.
+
+## Reviewed v3 release
+
+`final_gold_dataset_v2.csv` is restored to the exact original release bytes.
+Do not edit it to record further review decisions.
+
+- `contextualization_review.csv`: preserved snapshot of the researcher's edited
+  export with the 29 decisions and comments. Its metadata is not authoritative:
+  six confirmed accidental DOI edits are recorded and ignored by the builder.
+- `final_gold_dataset_v3.csv`: 500 annotation records with 17 revised final
+  labels and 12 remaining Contextualization items. Original metadata and
+  annotator labels are preserved from v2.
+- `final_gold_dataset_v3_manifest.json`: hashes, counts, the complete review
+  decision log, comments, and review provenance.
+
+These files are included in the private repository with byte-preserving Git
+attributes. V3 is a post-hoc, assistant-supported handbook revision following
+error analysis, not an independent or blind annotation round.
+
+Rebuild without overwriting the released files:
+
+```bash
+python -m bluesky_discourse.build_gold_v3 --outdir outputs/rebuild_gold_v3
+```
+
+The current preparation commands remain specific to v2. V3 preparation must
+be implemented explicitly and retain the saved v2 folds; do not pass v3 to the
+existing v2 validator or regenerate folds from its revised labels.

@@ -617,3 +617,196 @@ test IDs. Actual GESIS result files are not available in the local checkout,
 so no combined transformer scores have been computed locally or inferred from
 the displayed fold 0 and fold 4 results. Run aggregation on GESIS and retain its
 two outputs with the environment and committed code revision.
+
+## Error analysis of downloaded GESIS results
+
+The five-fold text-only summary and predictions were copied from GESIS for
+local inspection. The downloaded prediction hash matches its report; all 499
+annotation IDs are unique and their actual labels match the unchanged gold
+CSV. Recomputed accuracy and macro F1 agree with the saved metrics. Every
+confusion-matrix row was checked against the prediction CSV.
+
+The complete experiment made 284 correct predictions and 215 errors:
+
+| Model | Accuracy | Macro F1 | Weighted F1 |
+| --- | ---: | ---: | ---: |
+| Majority baseline | 0.308617 | 0.067381 | 0.145565 |
+| TF-IDF, text only | 0.525050 | 0.428154 | 0.498116 |
+| DistilBERT, text only | 0.569138 | 0.449501 | 0.531886 |
+
+Summed training time was 546.2 seconds. These are descriptive comparisons from
+one seeded evaluation, not a significance test or a repeated-seed estimate.
+
+### Actual confusion counts
+
+Rows below are predicted categories; columns identify the true category. These
+counts describe all items in the two focal gold categories, including correct
+predictions, rather than only their mistakes.
+
+| Predicted category | True Contextualization (29) | True Evaluation (55) |
+| --- | ---: | ---: |
+| Acknowledgment | 0 | 8 |
+| Announcement | 11 | 20 |
+| Contextualization | 0 | 0 |
+| Critique | 9 | 7 |
+| Evaluation | 0 | 9 |
+| Explanation | 6 | 5 |
+| Other | 3 | 6 |
+
+DistilBERT never predicts Contextualization in any of the five folds. The largest
+destinations for its true examples are Announcement and Critique, not
+Explanation. The category contains 14 original posts and 15 replies, so its
+failure is not restricted to replies. The model correctly identifies only
+9/55 Evaluation items; the most frequent error is Evaluation to Announcement.
+
+Other frequent mistakes include Explanation to Announcement (44), Explanation
+to Critique (24), and Other to Acknowledgment (19). Overall, 121/200 original
+posts and 163/299 replies were classified correctly.
+
+### Handbook and example inspection
+
+All 29 Contextualization texts were inspected alongside their available
+context, original human labels, and the rules in `annotation_handbook_v2.docx`.
+Evaluation examples were inspected from each predicted-label destination;
+this was a representative review, not a fresh annotation of every Evaluation
+item. The distinctions of interest are broader-context connection versus
+research description, publication sharing versus substantive assessment, and
+assessment of the work versus interpersonal acknowledgment.
+
+Examples worth discussing, without changing their gold labels:
+
+- `gold_0002`: gold Contextualization, predicted Explanation. Its research agenda
+  is connected to a changing sociopolitical climate, and all three humans chose
+  Contextualization. This is a model error even among unanimously labeled items.
+- `gold_0324`: gold Contextualization, predicted Announcement. Its text consists
+  largely of a paper title and link. The handbook's bare-title/link guidance
+  suggests Announcement, making this a candidate for an independent label audit.
+  The three original labels were Contextualization, Announcement, Contextualization.
+- `gold_0064`: gold Contextualization, predicted Announcement. The post combines
+  explicit praise with an application context, raising the handbook's
+  Evaluation/Contextualization boundary. It needs human assessment of the
+  dominant function; the model prediction is not a replacement label.
+- `gold_0015`: gold Evaluation, predicted Acknowledgment. It combines
+  congratulations with an explicit assessment that the work is important.
+  All three humans selected Evaluation. This supports investigating whether
+  the model overweights social wording and misses the target of the assessment.
+- `gold_0045`: gold Evaluation, predicted Announcement. The post explicitly
+  endorses a publication as a good read. All three humans selected Evaluation;
+  the handbook treats substantive recommendation as Evaluation.
+
+Contextualization also had low initial human consistency: only 4/29 items were
+unanimous, 11/29 had a two-human majority, and 14/29 required adjudication after
+all three humans differed. Thus 48.3% of this category required adjudication,
+compared with 58/499 (11.6%) across the prepared dataset. Evaluation had 12/55
+unanimous items and 6/55 adjudicated items. These are diagnostics of annotation
+difficulty, not proof that adjudicated labels are wrong or that disagreement
+caused the model failure.
+
+Limited training examples, overlapping communicative functions, missing context
+in this text-only run, and possible gold-label inconsistencies are hypotheses
+for further investigation. None is established as the cause by these results.
+The trained model used balanced class weights; rarity alone is not a sufficient
+explanation. No data or labels were changed, no category was merged, and no
+additional models were fitted during this analysis.
+
+The next step is an independent handbook-based audit of category boundaries,
+ideally sampled across categories without displaying model predictions first.
+Include both correctly and incorrectly classified examples to reduce selection
+bias. Model predictions are diagnostic evidence, not votes in gold adjudication.
+If the audit justifies label corrections, version the revised labels and report
+them transparently; do not overwrite this release or treat performance on the
+model-inspected items as a new untouched test estimate. Any parameter tuning
+must still use group-aware training-only splits.
+
+Hashes of the downloaded artifacts analyzed here:
+
+```text
+Predictions: 18fb8f1894af757e877d73fc258e69805604a9df5cf531edf43715f16ed65d58
+Report:      5c3842ec2a8ca520f5a9e644187ec8114d04dba505178a8482d20a2c4466257f
+```
+
+## Gold v3 after the Contextualization review
+
+Created on 2026-10-16 from the researcher's decisions in
+`new_label_Contextualization`, saved in the edited CSV. All 29 originally
+Contextualization items were reviewed, with 17 label changes and 12 retained
+labels. The saved decisions are authoritative for this revision; tentative
+suggestions in the conversation do not override them.
+
+The edited export still contained six accidental DOI conversions from
+`10.1126` to `101.126`, despite an attempted correction. Its complete bytes are
+preserved in `data/contextualization_review.csv`. The original
+`data/final_gold_dataset_v2.csv` was restored from the collection repository's
+preserved release after checking its original SHA-256. Thus v2 is again
+consistent with its existing manifest. No review decisions were lost.
+
+The v3 builder uses validated original metadata exclusively. It applies only
+the saved label decisions and comments; the six confirmed accidental DOI edits
+are recorded in the manifest and do not propagate to the dataset. Other
+unexpected edits to original fields stop the build. Empty unnamed spreadsheet
+columns are ignored only if every cell in those columns is empty.
+
+Added release files:
+
+- `data/final_gold_dataset_v3.csv`: all 500 original annotation IDs and their
+  metadata, with updated final labels where reviewed decisions changed them.
+- `data/final_gold_dataset_v3_manifest.json`: input/output hashes, counts, review
+  method and scope, and the complete 29-item decision log. It also lists the
+  ignored accidental metadata changes and additional-parent-context flags.
+
+The existing three-human labels, majority/adjudication fields, texts, context,
+DOIs, and post/thread identifiers remain unchanged. `final_label_v2` and
+`final_label_source_v2` preserve the old decisions. `new_label_Contextualization`
+and `Comment_on_` retain the saved review data. Only the 17 changed items receive
+`final_label_source=posthoc_handbook_review`. Six items are marked
+`additional_parent_context_inspected=True`: gold_0171, gold_0403, gold_0439,
+gold_0444, gold_0470, and gold_0476. Their parent text is not inserted into
+`context_text`, so the input text remains comparable with previous experiments.
+
+| Final label | V2 release | V3 release |
+| --- | ---: | ---: |
+| Acknowledgment | 45 | 45 |
+| Announcement | 119 | 126 |
+| Contextualization | 29 | 12 |
+| Critique | 50 | 51 |
+| Evaluation | 56 | 59 |
+| Explanation | 154 | 159 |
+| Other | 47 | 48 |
+| Total | 500 | 500 |
+
+Contextualization is retained. The repeated post `gold_0419` remains in both
+annotation releases and must still be excluded from derived training data;
+the release has 500 records, while training should continue to use 499 unique
+posts. Review decisions and annotator metadata are never model features.
+
+Reproduction is implemented in the single new script
+`src/bluesky_discourse/build_gold_v3.py`. With the restored v2 source and
+preserved review CSV in `data/`, run:
+
+```bash
+python -m bluesky_discourse.build_gold_v3 --outdir outputs/rebuild_gold_v3
+```
+
+The builder refuses to overwrite an existing release. The generated CSV should
+have SHA-256:
+
+```text
+b6125c5efa21bf2bfc7cc4313136fae7fb93d716ed9bb1549aeda022f3952f0b
+```
+
+All 34 tests passed. A full-file comparison additionally verified all 500 IDs,
+exactly 17 changed labels, preservation of every original metadata and human
+annotation field, and agreement between the v3 CSV hash and its manifest.
+
+This review followed model-error inspection, used assistant support, and was
+not blind or an independent fourth annotation. Some decisions used additional
+parent context that was not in the original annotation CSV. Do not recompute
+original inter-annotator agreement using the revised final labels. Any future
+model results on v3 must be reported as exploratory post-hoc label-revision
+experiments; this release does not create a fresh untouched test set.
+
+No retraining or fold reassignment was performed. The existing preparation
+validator and scripts remain specific to v2. The next implementation step is
+explicit v3 preparation reusing the original item/group/fold mapping, with
+separate output paths. Do not feed v3 into the existing v2 preparation command
+or overwrite the original experiment outputs.
