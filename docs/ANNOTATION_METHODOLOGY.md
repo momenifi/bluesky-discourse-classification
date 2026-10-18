@@ -31,7 +31,7 @@ posts are interpreted from the post text itself.
 
 ## Human annotation
 
-Three annotators, Ramin, Sarah, and Fakhri, labeled the 500 items separately.
+Three annotators, Annotator1, Annotator2, and Annotator3, labeled the 500 items separately.
 The annotators did not see one another's labels during initial annotation.
 Agreement was calculated on the original labels before majority resolution or
 LLM-assisted adjudication.
@@ -40,12 +40,12 @@ The completed three-rater results are:
 
 | Measure | Result |
 | --- | ---: |
-| Ramin-Sarah agreement | 47.6% |
-| Ramin-Sarah Cohen's kappa | 0.363902 |
-| Ramin-Fakhri agreement | 63.6% |
-| Ramin-Fakhri Cohen's kappa | 0.556606 |
-| Sarah-Fakhri agreement | 61.6% |
-| Sarah-Fakhri Cohen's kappa | 0.521874 |
+| Annotator1-Annotator2 agreement | 47.6% |
+| Annotator1-Annotator2 Cohen's kappa | 0.363902 |
+| Annotator1-Annotator3 agreement | 63.6% |
+| Annotator1-Annotator3 Cohen's kappa | 0.556606 |
+| Annotator2-Annotator3 agreement | 61.6% |
+| Annotator2-Annotator3 Cohen's kappa | 0.521874 |
 | Fleiss' kappa, three raters | 0.478197 |
 | Unanimous rows | 211 |
 | Exactly two annotators agree | 231 |
@@ -83,7 +83,7 @@ the final human decisions.
 `final_gold_dataset_v2.csv` and `final_gold_dataset_v2.xlsx` retain the sampled
 post metadata and add:
 
-- `ramin_label`, `sarah_label`, and `fakhri_label`;
+- `Annotator1_label`, `Annotator2_label`, and `Annotator3_label`;
 - `majority_label` and `majority_resolution`;
 - the LLM suggestion, confidence, rule, and rationale when adjudication was
   required;
